@@ -21,7 +21,11 @@ use Symfony\AI\Platform\Contract;
 use Symfony\AI\Platform\Exception\InvalidArgumentException;
 use Symfony\AI\Platform\Exception\RuntimeException;
 use Symfony\AI\Platform\ModelCatalog\ModelCatalogInterface;
+use Symfony\AI\Platform\ModelRouter\CatalogBasedModelRouter;
+use Symfony\AI\Platform\ModelRouterInterface;
 use Symfony\AI\Platform\Platform;
+use Symfony\AI\Platform\Provider;
+use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -29,9 +33,12 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 /**
  * @author Junaid Farooq <ulislam.junaid125@gmail.com>
  */
-final class PlatformFactory
+final class Factory
 {
-    public static function create(
+    /**
+     * @param non-empty-string $name
+     */
+    public static function createProvider(
         ?string $location = null,
         ?string $projectId = null,
         #[\SensitiveParameter] ?string $apiKey = null,
@@ -39,7 +46,8 @@ final class PlatformFactory
         ModelCatalogInterface $modelCatalog = new ModelCatalog(),
         ?Contract $contract = null,
         ?EventDispatcherInterface $eventDispatcher = null,
-    ): Platform {
+        string $name = 'vertexai',
+    ): ProviderInterface {
         if ((null === $location) !== (null === $projectId)) {
             throw new InvalidArgumentException('Both "location" and "projectId" must be provided together for the project-scoped VertexAI endpoint, or both must be null to use the global endpoint.');
         }
@@ -54,11 +62,33 @@ final class PlatformFactory
 
         $httpClient = $httpClient instanceof EventSourceHttpClient ? $httpClient : new EventSourceHttpClient($httpClient);
 
-        return new Platform(
+        return new Provider(
+            $name,
             [new GeminiModelClient($httpClient, $location, $projectId, $apiKey), new EmbeddingsModelClient($httpClient, $location, $projectId, $apiKey)],
             [new GeminiResultConverter(), new EmbeddingsResultConverter()],
             $modelCatalog,
             $contract ?? GeminiContract::create(),
+            $eventDispatcher,
+        );
+    }
+
+    /**
+     * @param non-empty-string $name
+     */
+    public static function createPlatform(
+        ?string $location = null,
+        ?string $projectId = null,
+        #[\SensitiveParameter] ?string $apiKey = null,
+        ?HttpClientInterface $httpClient = null,
+        ModelCatalogInterface $modelCatalog = new ModelCatalog(),
+        ?Contract $contract = null,
+        ?EventDispatcherInterface $eventDispatcher = null,
+        string $name = 'vertexai',
+        ?ModelRouterInterface $modelRouter = null,
+    ): Platform {
+        return new Platform(
+            [self::createProvider($location, $projectId, $apiKey, $httpClient, $modelCatalog, $contract, $eventDispatcher, $name)],
+            $modelRouter ?? new CatalogBasedModelRouter(),
             $eventDispatcher,
         );
     }
